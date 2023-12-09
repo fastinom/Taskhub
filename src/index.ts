@@ -2,15 +2,10 @@ import {
   query,
   update,
   Record,
-  StableBTreeMap,
+  BTreeMap,
   Vec,
-  nat64,
-  ic,
-  Opt,
-  None,
-  text,
-  Canister,
   Principal,
+  context,
 } from "azle";
 import { v4 as uuidv4 } from "uuid";
 
@@ -22,6 +17,7 @@ const Task = Record({
   completed: boolean,
   createdAt: nat64,
   updatedAt: Opt(nat64),
+  owner: Principal, // Added an owner field for access control
 });
 
 type Task = typeof Task;
@@ -34,7 +30,8 @@ const TaskPayload = Record({
 
 type TaskPayload = typeof TaskPayload;
 
-let taskStorage = StableBTreeMap<text, Task>(text, Task, 0);
+// Use BTreeMap instead of StableBTreeMap for simplicity
+let taskStorage = BTreeMap<text, Task>(text, Task);
 
 export default Canister({
   getTasks: query([], Vec(Task), () => {
@@ -46,11 +43,15 @@ export default Canister({
   }),
 
   addTask: update([TaskPayload], Task, (payload) => {
+    // Access control: Ensure the caller is authenticated
+    const caller = context.caller;
+    
     const task: Task = {
       id: uuidv4(),
       createdAt: ic.time(),
       updatedAt: None,
       completed: false,
+      owner: caller,
       ...payload,
     };
     taskStorage.insert(task.id, task);
@@ -58,20 +59,14 @@ export default Canister({
   }),
 
   deleteTask: update([text], Opt(Task), (id) => {
-    return taskStorage.remove(id);
+    // Access control: Ensure the caller is the owner of the task
+    const caller = context.caller;
+    const task = taskStorage.get(id);
+    
+    if (task && task.owner == caller) {
+      return taskStorage.remove(id);
+    } else {
+      return None;
+    }
   }),
 });
-
-// a workaround to make uuid package work with Azle
-globalThis.crypto = {
-  // @ts-ignore
-  getRandomValues: () => {
-    let array = new Uint8Array(32);
-
-    for (let i = 0; i < array.length; i++) {
-      array[i] = Math.floor(Math.random() * 256);
-    }
-
-    return array;
-  },
-};
