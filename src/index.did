@@ -1,6 +1,22 @@
-service: () -> {
-    addTask: (record {title:text; description:text; dueDate:opt nat64}) -> (record {id:text; title:text; description:text; dueDate:opt nat64; completed:bool; createdAt:nat64; updatedAt:opt nat64});
-    deleteTask: (text) -> (opt record {id:text; title:text; description:text; dueDate:opt nat64; completed:bool; createdAt:nat64; updatedAt:opt nat64});
-    getTask: (text) -> (opt record {id:text; title:text; description:text; dueDate:opt nat64; completed:bool; createdAt:nat64; updatedAt:opt nat64}) query;
-    getTasks: () -> (vec record {id:text; title:text; description:text; dueDate:opt nat64; completed:bool; createdAt:nat64; updatedAt:opt nat64}) query;
+type Task = record {
+  id : text;
+  title : text;
+  createdAt : nat64;
+  completed : bool;
+  dueDate : opt nat64;
+  description : text;
+  updatedAt : opt nat64;
+};
+type TaskPayload = record {
+  title : text;
+  dueDate : opt nat64;
+  description : text;
+};
+type _AzleResult = variant { Ok : Task; Err : text };
+type _AzleResult_1 = variant { Ok : vec Task; Err : text };
+service : () -> {
+  addTask : (TaskPayload) -> (_AzleResult);
+  deleteTask : (text) -> (_AzleResult);
+  getTask : (text) -> (_AzleResult) query;
+  getTasks : () -> (_AzleResult_1) query;
 }
