@@ -1,68 +1,123 @@
 import {
-  query,
-  update,
+  $query,
+  $update,
   Record,
   StableBTreeMap,
   Vec,
   nat64,
   ic,
   Opt,
-  None,
-  text,
-  Canister,
-  Principal,
+  match,
+  Result,
+  text, // Added text type for error messages
 } from "azle";
 import { v4 as uuidv4 } from "uuid";
 
-const Task = Record({
-  id: text,
-  title: text,
-  description: text,
-  dueDate: Opt(nat64),
+// Define the Task type
+type Task = Record<{
+  id: string,
+  title: string,
+  description: string,
+  dueDate: Opt<nat64>,
   completed: boolean,
   createdAt: nat64,
-  updatedAt: Opt(nat64),
-});
+  updatedAt: Opt<nat64>,
+}>;
 
-type Task = typeof Task;
+// Define the TaskPayload type
+type TaskPayload = Record<{
+  title: string,
+  description: string,
+  dueDate: Opt<nat64>,
+}>;
 
-const TaskPayload = Record({
-  title: text,
-  description: text,
-  dueDate: Opt(nat64),
-});
+// Create a storage map for tasks
+const taskStorage = new StableBTreeMap<string, Task>(0, 44, 1024);
 
-type TaskPayload = typeof TaskPayload;
+// Retrieve all tasks
+$query
+export function getTasks(): Result<Vec<Task>, string> {
+  try {
+    // Try to retrieve all tasks from the storage
+    return Result.Ok<Vec<Task>, string>(taskStorage.values());
+  } catch (error: any) {
+    // Handle errors during retrieval and provide an error message
+    return Result.Err<Vec<Task>, string>(`Error getting tasks: ${error}`);
+  }
+}
 
-let taskStorage = StableBTreeMap<text, Task>(text, Task, 0);
+// Retrieve a specific task by ID
+$query
+export function getTask(id: string): Result<Task, string> {
+  try {
+    // Validate the ID
+    if (!id || typeof id !== "string") {
+      throw new Error("Invalid ID");
+    }
 
-export default Canister({
-  getTasks: query([], Vec(Task), () => {
-    return taskStorage.values();
-  }),
+    // Try to retrieve the task by ID from the storage
+    const taskOpt = taskStorage.get(id);
+    return match(taskOpt, {
+      Some: (task) => Result.Ok<Task, string>(task),
+      None: () => Result.Err<Task, string>(`The task with id=${id} was not found`),
+    });
+  } catch (error: any) {
+    // Handle errors during retrieval and provide an error message
+    return Result.Err<Task, string>(`Error getting task: ${error}`);
+  }
+}
 
-  getTask: query([text], Opt(Task), (id) => {
-    return taskStorage.get(id);
-  }),
+// Add a new task
+$update
+export function addTask(payload: TaskPayload): Result<Task, string> {
+  try {
+    // Validate payload properties
+    if (!payload.title || !payload.description || typeof payload.title !== "string" || typeof payload.description !== "string") {
+      throw new Error("Invalid payload");
+    }
 
-  addTask: update([TaskPayload], Task, (payload) => {
+    // Create a new task with a unique ID and current timestamp
     const task: Task = {
       id: uuidv4(),
       createdAt: ic.time(),
-      updatedAt: None,
+      updatedAt: Opt.None,
       completed: false,
-      ...payload,
+      title: payload.title,
+      description: payload.description,
+      dueDate: payload.dueDate,
     };
+
+    // Insert the new task into the storage
     taskStorage.insert(task.id, task);
-    return task;
-  }),
+    return Result.Ok<Task, string>(task);
+  } catch (error: any) {
+    // Handle errors during addition and provide an error message
+    return Result.Err<Task, string>(`Error adding task: ${error}`);
+  }
+}
 
-  deleteTask: update([text], Opt(Task), (id) => {
-    return taskStorage.remove(id);
-  }),
-});
+// Delete a task by ID
+$update
+export function deleteTask(id: string): Result<Task, string> {
+  try {
+    // Validate the ID
+    if (!id || typeof id !== "string") {
+      throw new Error("Invalid ID");
+    }
 
-// a workaround to make uuid package work with Azle
+    // Try to remove the task by ID from the storage
+    const deletedTask = taskStorage.remove(id);
+    return match(deletedTask, {
+      Some: (task) => Result.Ok<Task, string>(task),
+      None: () => Result.Err<Task, string>(`The task with id=${id} was not found`),
+    });
+  } catch (error: any) {
+    // Handle errors during deletion and provide an error message
+    return Result.Err<Task, string>(`Error deleting task: ${error}`);
+  }
+}
+
+// A workaround to make the uuid package work with Azle
 globalThis.crypto = {
   // @ts-ignore
   getRandomValues: () => {
